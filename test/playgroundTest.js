@@ -175,4 +175,82 @@ describe("TellorPlayground", function() {
 		expect(await playground.balanceOf(playground.address)).to.equal(BigInt(5) * precision);
 		expect(await playground.balanceOf(owner.address)).to.equal(BigInt(990) * precision);
 	});
+
+	it("depositStake()", async function() {
+		await h.expectThrow(playground.connect(addr1).depositStake(h.toWei("100")))
+		await playground.faucet(addr1.address);
+		expect(await playground.balanceOf(addr1.address)).to.equal(h.toWei("1000"))
+		await playground.connect(addr1).approve(playground.address, h.toWei("1000"))
+		await playground.connect(addr1).depositStake(h.toWei("100"))
+		blocky = await h.getBlock()
+		expect(await playground.balanceOf(addr1.address)).to.equal(h.toWei("900"))
+		stakerInfo = await playground.getStakerInfo(addr1.address);
+		expect(stakerInfo[0]).to.equal(blocky.timestamp); // startDate
+		expect(stakerInfo[1]).to.equal(h.toWei("100")); // stakedBalance
+		expect(stakerInfo[2]).to.equal(0); // lockedBalance
+		expect(stakerInfo[3]).to.equal(0); // reporterLastTimestamp
+		expect(stakerInfo[4]).to.equal(0); // reportsSubmitted
+	})
+
+	it("requestStakingWithdraw()", async function() {
+		await playground.faucet(addr1.address);
+		await playground.connect(addr1).approve(playground.address, h.toWei("1000"))
+		await playground.connect(addr1).depositStake(h.toWei("100"))
+		blocky = await h.getBlock()
+		stakerInfo = await playground.getStakerInfo(addr1.address);
+		expect(stakerInfo[0]).to.equal(blocky.timestamp); // startDate
+		expect(stakerInfo[1]).to.equal(h.toWei("100")); // stakedBalance
+		expect(stakerInfo[2]).to.equal(0); // lockedBalance
+		expect(stakerInfo[3]).to.equal(0); // reporterLastTimestamp
+		expect(stakerInfo[4]).to.equal(0); // reportsSubmitted
+		await h.expectThrow(playground.connect(addr1).requestStakingWithdraw(h.toWei("101")))
+		await playground.connect(addr1).requestStakingWithdraw(h.toWei("90"))
+		blocky = await h.getBlock()
+		stakerInfo = await playground.getStakerInfo(addr1.address);
+		expect(stakerInfo[0]).to.equal(blocky.timestamp); // startDate
+		expect(stakerInfo[1]).to.equal(h.toWei("10")); // stakedBalance
+		expect(stakerInfo[2]).to.equal(h.toWei("90")); // lockedBalance
+	})
+
+	it("withdrawStake()", async function() {
+		await playground.faucet(addr1.address);
+		await playground.connect(addr1).approve(playground.address, h.toWei("1000"))
+		await playground.connect(addr1).depositStake(h.toWei("100"))
+		await h.expectThrow(playground.connect(addr1).withdrawStake())
+		await playground.connect(addr1).requestStakingWithdraw(h.toWei("90"))
+		blocky = await h.getBlock()
+		stakerInfo = await playground.getStakerInfo(addr1.address);
+		expect(stakerInfo[1]).to.equal(h.toWei("10")); // stakedBalance
+		expect(stakerInfo[2]).to.equal(h.toWei("90")); // lockedBalance
+		await h.expectThrow(playground.connect(addr1).withdrawStake()) // 7 days didn't pass
+		await h.advanceTime(86400*7)
+		expect(await playground.balanceOf(addr1.address)).to.equal(h.toWei("900"))
+		await playground.connect(addr1).withdrawStake()
+		stakerInfo = await playground.getStakerInfo(addr1.address);
+		expect(stakerInfo[1]).to.equal(h.toWei("10")); // stakedBalance
+		expect(stakerInfo[2]).to.equal(0); // lockedBalance
+		expect(await playground.balanceOf(addr1.address)).to.equal(h.toWei("990"))
+	})
+
+	it("getReporterByTimestamp()", async function() {
+		await playground.submitValue(h.uintTob32(1), h.uintTob32(100), 0, '0x')
+		blocky = await h.getBlock()
+		expect(await playground.getReporterByTimestamp(h.uintTob32(1), blocky.timestamp)).to.equal(owner.address)
+	})
+
+	it("getStakerInfo()", async function() {
+		await playground.faucet(addr1.address);
+		await playground.connect(addr1).approve(playground.address, h.toWei("1000"))
+		await playground.connect(addr1).depositStake(h.toWei("100"))
+		await playground.connect(addr1).requestStakingWithdraw(h.toWei("90"))
+		blocky1 = await h.getBlock()
+		await playground.connect(addr1).submitValue(h.uintTob32(1), h.uintTob32(100), 0, '0x')
+		blocky2 = await h.getBlock()
+		stakerInfo = await playground.getStakerInfo(addr1.address);
+		expect(stakerInfo[0]).to.equal(blocky1.timestamp); // startDate
+		expect(stakerInfo[1]).to.equal(h.toWei("10")); // stakedBalance
+		expect(stakerInfo[2]).to.equal(h.toWei("90")); // lockedBalance
+		expect(stakerInfo[3]).to.equal(blocky2.timestamp); // reporterLastTimestamp
+		expect(stakerInfo[4]).to.equal(1); // reportsSubmitted
+	})
 });
